@@ -1,0 +1,69 @@
+name: Build DEB Package
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-deb:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install Dependencies
+        run: |
+          brew install xcodegen
+
+      - name: Build Project
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Build App with Xcode
+        run: |
+          xcodebuild clean build \
+            -project LocationSpoofer.xcodeproj \
+            -scheme LocationSpoofer \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create DEB Package
+        run: |
+          # 1. إنشاء هياكل المجلدات الخاصة بحزمة DEB
+          mkdir -p deb_dist/DEBIAN
+          mkdir -p deb_dist/Applications
+
+          # 2. نقل ملف الـ .app الناتج من خادم البناء
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" | head -n 1)
+          cp -R "$APP_PATH" deb_dist/Applications/
+
+          # 3. إنشاء ملف التكوين (control)
+          cat << 'EOF' > deb_dist/DEBIAN/control
+          Package: com.acheong08.locationspoofer
+          Name: Location Spoofer
+          Version: 1.0.0
+          Architecture: iphoneos-arm
+          Description: iOS Location Spoofer app for jailbroken devices.
+          Maintainer: acheong08
+          Section: Applications
+          Tag: role::app
+          EOF
+
+          # 4. حزم المجلد إلى ملف .deb
+          dpkg-deb -Zgzip -b deb_dist LocationSpoofer.deb
+
+      - name: Upload DEB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LocationSpoofer-DEB
+          path: LocationSpoofer.deb
